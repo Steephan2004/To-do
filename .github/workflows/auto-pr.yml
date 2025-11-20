@@ -3,7 +3,7 @@ name: Auto PR with Gemini
 on:
   push:
     branches:
-      - feature/*
+      - "*"
 
 jobs:
   create-pr:
