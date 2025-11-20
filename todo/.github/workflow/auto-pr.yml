@@ -1,0 +1,54 @@
+name: Auto PR with Gemini
+
+on:
+  push:
+    branches:
+      - feature/*
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get git diff
+        id: diff
+        run: |
+          echo "diff<<EOF" >> $GITHUB_OUTPUT
+          git fetch origin main
+          git diff origin/main...HEAD >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate PR body using Gemini
+        id: gen
+        run: |
+          DIFF="${{ steps.diff.outputs.diff }}"
+          
+          JSON=$(jq -n \
+            --arg prompt "Write a highly professional Pull Request description. Include: Title, Summary, What Changed, Why, Testing Steps, Risks. Here is the git diff: $DIFF" \
+            '{contents: [{parts: [{text: $prompt}]}]}')
+
+          RESPONSE=$(
+            curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-goog-api-key: $GEMINI_API_KEY" \
+            -d "$JSON" \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+          )
+
+          BODY=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text')
+
+          echo "$BODY" > pr-body.md
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Create the Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "Auto-generated PR"
+          title: "Auto-generated PR"
+          body: pr-body.md
+          branch: "auto-pr-${{ github.run_id }}"
+          base: "main"
